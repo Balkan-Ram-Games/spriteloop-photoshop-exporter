@@ -8,23 +8,19 @@ The exporter creates:
 - `spriteloop.import.json` metadata
 - position and hierarchy data so SpriteLoop can reconstruct the artwork layout
 
-## Status
+## Install
 
-Initial full-parity implementation for local UXP development. The metadata format matches the Krita exporter package contract.
-
-## Install for Development
-
-1. Install Adobe UXP Developer Tool.
-2. Open UXP Developer Tool.
-3. Choose **Add Plugin**.
-4. Select this folder:
+1. Download the latest `spriteloop-photoshop-exporter.ccx` package.
+2. Double-click the `.ccx` file.
+3. Follow the Creative Cloud installation prompt.
+4. Restart Photoshop if it is already open.
+5. Open the exporter from:
 
    ```text
-   D:\GitHub\Other\spriteloop-photoshop-exporter
+   Plugins -> SpriteLoop Exporter -> SpriteLoop
    ```
 
-5. Load the plugin into Photoshop.
-6. Open the **SpriteLoop** panel in Photoshop.
+The exporter panel is named **SpriteLoop**.
 
 ## Usage
 
@@ -58,23 +54,3 @@ The metadata file is named `spriteloop.import.json` and uses:
 - `canvas.width` and `canvas.height`
 - `parts[]` entries with `id`, `name`, `image`, `x`, `y`, `width`, `height`, `opacity`, `visible`, and optional `parentId`
 - optional `hierarchy[]` entries for groups
-
-## Tests
-
-Run the pure exporter tests with:
-
-```text
-npm test
-```
-
-These tests cover slugging, duplicate names, traversal options, hierarchy metadata, and zero-size layer skipping. Photoshop PNG export still needs manual QA inside Photoshop because it depends on UXP host APIs.
-
-## Manual QA Checklist
-
-- Export a PSD with visible and invisible layers.
-- Export a PSD with nested groups using both group-export modes.
-- Export text, shape/vector, smart object, and pixel layers.
-- Import the package into SpriteLoop and confirm part placement.
-- Confirm PNGs preserve transparency and are cropped to visible content.
-- Confirm duplicate layer names produce unique IDs and filenames.
-
