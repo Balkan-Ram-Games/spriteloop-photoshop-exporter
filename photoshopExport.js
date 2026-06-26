@@ -12,6 +12,10 @@ const {
 
 const { app, core, action } = photoshop;
 const batchPlay = action.batchPlay;
+const BATCH_OPTIONS = {
+  synchronousExecution: true,
+  modalBehavior: "execute"
+};
 
 async function chooseExportFolder() {
   return localFileSystem.getFolder();
@@ -50,6 +54,7 @@ async function exportActiveDocument(exportFolder, options, progressCallback) {
       const part = spriteLoopPackage.parts[index];
       reportProgress(progressCallback, index + 1, total, part.node.name);
       await exportNodePng(document, documentInfo, part.node, imagesFolder, part.fileName);
+      await pauseForPhotoshopEvents();
     }
   }, { commandName: "Export SpriteLoop Package" });
 
@@ -127,7 +132,7 @@ async function boundsForLayer(layer) {
       ],
       _options: { dialogOptions: "dontDisplay" }
     }
-  ], {});
+  ], BATCH_OPTIONS);
 
   return result && result[0] && result[0].bounds ? result[0].bounds : null;
 }
@@ -145,7 +150,7 @@ async function exportNodePng(sourceDocument, documentInfo, node, imagesFolder, f
 
   try {
     await selectDocument(originalDocumentId);
-    await selectLayer(layerId);
+    await selectLayer(layerId, node.name);
     tempDocumentId = await createDocumentFromSelectedLayer(node.name || "SpriteLoop Part");
     if (!tempDocumentId || tempDocumentId === originalDocumentId) {
       throw new Error("Photoshop did not create a separate temporary document.");
@@ -164,10 +169,8 @@ async function exportNodePng(sourceDocument, documentInfo, node, imagesFolder, f
   } finally {
     if (tempDocumentId !== null && tempDocumentId !== originalDocumentId) {
       try {
-        await selectDocument(tempDocumentId);
-        if (await activeDocumentId() === tempDocumentId) {
-          await closeActiveDocumentWithoutSaving();
-        }
+        await selectDocument(originalDocumentId);
+        await closeDocumentWithoutSaving(tempDocumentId);
       } catch (_error) {
         // Best-effort cleanup: preserve the original export error if closing fails.
       }
@@ -191,22 +194,28 @@ async function selectDocument(documentId) {
       _target: [{ _ref: "document", _id: documentId }],
       _options: { dialogOptions: "dontDisplay" }
     }
-  ], {});
+  ], BATCH_OPTIONS);
 }
 
-async function selectLayer(layerId) {
+async function selectLayer(layerId, layerName) {
   if (layerId === undefined || layerId === null) {
     throw new Error("Missing Photoshop layer id.");
+  }
+
+  const target = { _ref: "layer", _id: layerId };
+  if (layerName) {
+    target._name = layerName;
   }
 
   await batchPlay([
     {
       _obj: "select",
-      _target: [{ _ref: "layer", _id: layerId }],
+      _target: [target],
+      name: layerName || undefined,
       makeVisible: false,
       _options: { dialogOptions: "dontDisplay" }
     }
-  ], {});
+  ], BATCH_OPTIONS);
 }
 
 async function createDocumentFromSelectedLayer(name) {
@@ -222,7 +231,7 @@ async function createDocumentFromSelectedLayer(name) {
       name,
       _options: { dialogOptions: "dontDisplay" }
     }
-  ], {});
+  ], BATCH_OPTIONS);
 
   return activeDocumentId();
 }
@@ -238,7 +247,7 @@ async function trimTransparentPixels() {
       right: true,
       _options: { dialogOptions: "dontDisplay" }
     }
-  ], {});
+  ], BATCH_OPTIONS);
 }
 
 async function saveActiveDocumentAsPng(file) {
@@ -258,17 +267,18 @@ async function saveActiveDocumentAsPng(file) {
       lowerCase: true,
       _options: { dialogOptions: "dontDisplay" }
     }
-  ], {});
+  ], BATCH_OPTIONS);
 }
 
-async function closeActiveDocumentWithoutSaving() {
+async function closeDocumentWithoutSaving(documentId) {
   await batchPlay([
     {
       _obj: "close",
+      _target: [{ _ref: "document", _id: documentId }],
       saving: { _enum: "yesNo", _value: "no" },
       _options: { dialogOptions: "dontDisplay" }
     }
-  ], {});
+  ], BATCH_OPTIONS);
 }
 
 async function getOrCreateFolder(parent, name) {
@@ -308,6 +318,10 @@ function unitValue(value) {
   return Number.parseFloat(String(value || "0"));
 }
 
+function pauseForPhotoshopEvents() {
+  return new Promise((resolve) => setTimeout(resolve, 80));
+}
+
 function documentIdFromDocument(document) {
   return document.id ?? document._id ?? document.documentID;
 }
@@ -322,7 +336,7 @@ async function activeDocumentId() {
       ],
       _options: { dialogOptions: "dontDisplay" }
     }
-  ], {});
+  ], BATCH_OPTIONS);
 
   const descriptor = result && result[0] ? result[0] : {};
   const id = descriptor.documentID ?? descriptor.documentId ?? descriptor.id;
