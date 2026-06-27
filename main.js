@@ -85,7 +85,7 @@ async function renderPanel(root) {
   wrapper.className = "panel";
   wrapper.innerHTML = `
     <div class="brand brand-centered">
-      <img class="brand-logo brand-logo-large" src="assets/spriteloop-logo.png" alt="" />
+      <img class="brand-logo brand-logo-large" src="assets/ui-logo.png" alt="" />
       <div class="brand-copy">
         <h1>SpriteLoop</h1>
         <p>Photoshop Exporter</p>
@@ -309,7 +309,7 @@ async function showExportOptionsDialog() {
   dialog.innerHTML = `
     <div class="dialog-panel dialog-panel-wide">
       <header class="dialog-heading">
-        <img class="dialog-brand-icon" src="assets/spriteloop-logo.png" alt="" />
+        <img class="dialog-brand-icon" src="assets/ui-logo.png" alt="" />
         <div class="dialog-heading-copy">
           <h2>Export SpriteLoop Package</h2>
           <p class="dialog-subtitle">Choose where and what to export from the active document.</p>

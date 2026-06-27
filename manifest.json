@@ -18,6 +18,23 @@
       "label": {
         "default": "SpriteLoop"
       },
+      "icons": [
+        {
+          "width": 23,
+          "height": 23,
+          "path": "assets/panel-icon.png",
+          "scale": [
+            1,
+            2
+          ],
+          "theme": [
+            "all"
+          ],
+          "species": [
+            "toolbar"
+          ]
+        }
+      ],
       "minimumSize": {
         "width": 280,
         "height": 260
@@ -45,21 +62,18 @@
   ],
   "icons": [
     {
-      "width": 48,
-      "height": 48,
-      "path": "assets/spriteloop-logo.png",
+      "width": 24,
+      "height": 24,
+      "path": "assets/plugin-icon.png",
       "scale": [
         1,
         2
       ],
       "theme": [
-        "darkest",
-        "dark",
-        "medium",
-        "lightest"
+        "all"
       ],
       "species": [
-        "generic"
+        "pluginList"
       ]
     }
   ]
