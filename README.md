@@ -4,6 +4,8 @@
 
 Photoshop UXP extension for exporting layered artwork as a SpriteLoop import package.
 
+![SpriteLoop Photoshop Exporter interface](screenshots/preview.png)
+
 The exporter creates:
 
 - cropped PNG files for exported parts
