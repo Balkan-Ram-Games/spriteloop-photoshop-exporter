@@ -26,11 +26,11 @@ The exporter panel is named **SpriteLoop**.
 
 1. Open a Photoshop document.
 2. Open the SpriteLoop panel.
-3. Choose an export folder.
-4. Choose export options:
+3. Click **Export Package**.
+4. In the export dialog, choose an export folder and export options:
    - **Export groups as images** exports each group as one part and does not export its children.
    - **Export visible layers only** skips hidden layers and hidden groups.
-5. Click **Export Package**.
+5. Click **Export**.
 
 The exported package has this layout:
 

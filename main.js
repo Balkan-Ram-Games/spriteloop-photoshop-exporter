@@ -1,9 +1,7 @@
 "use strict";
 
-const { entrypoints } = require("uxp");
-const { storage } = require("uxp");
+const { entrypoints, storage } = require("uxp");
 const photoshop = require("photoshop");
-const { SpriteLoopExportError } = require("./exporter");
 const { chooseExportFolder, exportActiveDocument } = require("./photoshopExport");
 
 const DEFAULT_SETTINGS = {
@@ -15,7 +13,9 @@ let state = {
   panel: null,
   exportFolder: null,
   settings: { ...DEFAULT_SETTINGS },
-  exporting: false
+  settingsPromise: null,
+  exporting: false,
+  dialogOpen: false
 };
 const mountedRoots = new WeakSet();
 
@@ -32,9 +32,7 @@ entrypoints.setup({
   },
   commands: {
     exportSpriteLoopPackage: {
-      run: async () => {
-        await runExport();
-      }
+      run: openExportWorkflow
     }
   }
 });
@@ -86,37 +84,22 @@ async function renderPanel(root) {
   const wrapper = document.createElement("div");
   wrapper.className = "panel";
   wrapper.innerHTML = `
-    <div class="brand">
-      <img class="brand-logo" src="assets/spriteloop-logo.png" alt="" />
-      <div>
+    <div class="brand brand-centered">
+      <img class="brand-logo brand-logo-large" src="assets/spriteloop-logo.png" alt="" />
+      <div class="brand-copy">
         <h1>SpriteLoop</h1>
         <p>Photoshop Exporter</p>
       </div>
     </div>
 
-    <section class="control-group">
-      <div class="group-title">Destination</div>
-      <div class="destination-row">
-        <div id="export-folder" class="folder-display">No folder selected</div>
-        <button id="choose-folder" class="secondary" type="button">Browse</button>
-      </div>
-    </section>
+    <div class="section-divider"></div>
 
-    <section class="control-group">
-      <div class="group-title">Export Content</div>
-      <label class="option-row">
-        <input id="export-groups" type="checkbox" />
-        <span>Export groups as images</span>
-      </label>
-      <label class="option-row">
-        <input id="visible-only" type="checkbox" />
-        <span>Export visible layers only</span>
-      </label>
-    </section>
+    <div class="panel-actions">
+      <sp-button id="export-button" variant="cta">Export Package</sp-button>
+    </div>
 
-    <button id="export-button" class="primary" type="button">Export Package</button>
-    <div id="progress-wrap" class="progress-wrap" hidden>
-      <progress id="progress" class="progress" max="1" value="0"></progress>
+    <div id="progress-wrap" class="panel-progress" hidden>
+      <sp-progressbar id="progress" max="100" value="0" size="small" show-value="false"></sp-progressbar>
     </div>
     <div id="status" class="status is-idle" role="status"></div>
   `;
@@ -124,21 +107,54 @@ async function renderPanel(root) {
   root.appendChild(link);
   root.appendChild(wrapper);
 
-  state.settings = await loadSettings();
+  await ensureSettingsLoaded();
   syncPanel();
+  root.querySelector("#export-button").addEventListener("click", openExportWorkflow);
+}
 
-  root.querySelector("#choose-folder").addEventListener("click", async () => {
-    const folder = await chooseExportFolder();
-    if (folder) {
-      state.exportFolder = folder;
-      await saveSettingsFromPanel();
+async function openExportWorkflow() {
+  if (state.exporting || state.dialogOpen) {
+    return;
+  }
+
+  await ensureSettingsLoaded();
+
+  if (!photoshop.app.activeDocument) {
+    state.dialogOpen = true;
+    syncPanel();
+    try {
+      await showResultDialog({
+        title: "No document open",
+        message: "Open a Photoshop document before exporting.",
+        tone: "error"
+      });
+    } finally {
+      state.dialogOpen = false;
       syncPanel();
     }
-  });
+    return;
+  }
 
-  root.querySelector("#export-groups").addEventListener("change", saveSettingsFromPanel);
-  root.querySelector("#visible-only").addEventListener("change", saveSettingsFromPanel);
-  root.querySelector("#export-button").addEventListener("click", runExport);
+  state.dialogOpen = true;
+  syncPanel();
+  let options;
+  try {
+    options = await showExportOptionsDialog();
+  } finally {
+    state.dialogOpen = false;
+    syncPanel();
+  }
+
+  if (!options) {
+    return;
+  }
+
+  state.exportFolder = options.exportFolder;
+  state.settings = {
+    exportGroupsAsImages: options.exportGroupsAsImages,
+    visibleOnly: options.visibleOnly
+  };
+  await runExport();
 }
 
 async function runExport() {
@@ -148,52 +164,64 @@ async function runExport() {
 
   try {
     state.exporting = true;
-    syncPanel();
-
-    if (!state.exportFolder) {
-      setStatus("Choose an export folder.");
-      state.exportFolder = await chooseExportFolder();
-      if (!state.exportFolder) {
-        throw new SpriteLoopExportError("Choose an export folder.");
-      }
-    }
-
-    await saveSettingsFromPanel();
     setStatus("Preparing export...");
     setProgress(0, 1);
+    syncPanel();
 
+    await saveSettings();
     const result = await exportActiveDocument(state.exportFolder, state.settings, (current, total, nodeName) => {
-      setStatus(`Exporting ${nodeName} (${current}/${total})`);
+      const message = `Exporting ${nodeName} (${current}/${total})`;
+      setStatus(message);
       setProgress(current, total);
     });
 
     setStatus(`Exported ${result.partCount} part(s).`);
     setProgress(1, 1);
-    await showDialog("SpriteLoop Export Complete", `Exported ${result.partCount} part(s).\n\n${result.metadataPath}`, "success");
+
+    state.dialogOpen = true;
+    await showResultDialog({
+      title: "Export complete",
+      message: `Exported ${result.partCount} part(s). The package is ready to import into SpriteLoop.`,
+      detailLabel: "Data file",
+      detail: result.metadataPath,
+      tone: "success"
+    });
   } catch (error) {
     const message = error && error.message ? error.message : String(error);
     console.error("SpriteLoop Export Failed", error);
     setStatus(message);
-    await showDialog("SpriteLoop Export Failed", message, "error");
+
+    state.dialogOpen = true;
+    await showResultDialog({
+      title: "Export failed",
+      message,
+      tone: "error"
+    });
   } finally {
+    state.dialogOpen = false;
     state.exporting = false;
     syncPanel();
   }
 }
 
-async function saveSettingsFromPanel() {
-  if (state.panel) {
-    state.settings = {
-      exportGroupsAsImages: state.panel.querySelector("#export-groups").checked,
-      visibleOnly: state.panel.querySelector("#visible-only").checked
-    };
+function ensureSettingsLoaded() {
+  if (!state.settingsPromise) {
+    state.settingsPromise = loadSettings().then((settings) => {
+      state.settings = settings;
+      return settings;
+    });
   }
+  return state.settingsPromise;
+}
 
+async function saveSettings() {
   const data = await storage.localFileSystem.getDataFolder();
   const file = await data.createFile("settings.json", { overwrite: true });
   await file.write(JSON.stringify({
     ...state.settings,
-    exportFolderToken: state.exportFolder ? await storage.localFileSystem.createPersistentToken(state.exportFolder) : null
+    exportFolderToken: state.exportFolder
+      ? await storage.localFileSystem.createPersistentToken(state.exportFolder)
+      : null
   }, null, 2));
 }
 
@@ -226,24 +254,12 @@ function syncPanel() {
     return;
   }
 
-  const folderDisplay = state.panel.querySelector("#export-folder");
-  const exportGroups = state.panel.querySelector("#export-groups");
-  const visibleOnly = state.panel.querySelector("#visible-only");
   const exportButton = state.panel.querySelector("#export-button");
-
-  if (state.exportFolder) {
-    const path = state.exportFolder.nativePath || state.exportFolder.name;
-    folderDisplay.textContent = path;
-    folderDisplay.title = path;
-    folderDisplay.classList.add("has-folder");
-  } else {
-    folderDisplay.textContent = "No folder selected";
-    folderDisplay.title = "";
-    folderDisplay.classList.remove("has-folder");
+  if (!exportButton) {
+    return;
   }
-  exportGroups.checked = state.settings.exportGroupsAsImages !== false;
-  visibleOnly.checked = state.settings.visibleOnly !== false;
-  exportButton.disabled = state.exporting;
+
+  exportButton.disabled = state.exporting || state.dialogOpen;
   exportButton.textContent = state.exporting ? "Exporting..." : "Export Package";
   setProgressVisible(state.exporting);
 }
@@ -271,8 +287,9 @@ function setProgress(current, total) {
   }
 
   const safeTotal = Math.max(1, Number(total) || 1);
+  const safeCurrent = Math.max(0, Math.min(safeTotal, Number(current) || 0));
   progress.max = safeTotal;
-  progress.value = Math.max(0, Math.min(safeTotal, Number(current) || 0));
+  progress.value = safeCurrent;
 }
 
 function setProgressVisible(visible) {
@@ -286,32 +303,155 @@ function setProgressVisible(visible) {
   }
 }
 
-async function showDialog(title, message, tone) {
+async function showExportOptionsDialog() {
   const dialog = document.createElement("dialog");
-  dialog.className = `dialog dialog-${tone}`;
+  dialog.className = "dialog dialog-options";
   dialog.innerHTML = `
-    <form method="dialog" class="dialog-panel">
-      <div class="dialog-heading">
-        <div class="dialog-icon" aria-hidden="true">${tone === "success" ? "✓" : "!"}</div>
-        <div>
-          <h2>${escapeHtml(title)}</h2>
-          <div class="dialog-subtitle">${tone === "success" ? "Package ready for SpriteLoop import" : "Export did not complete"}</div>
+    <div class="dialog-panel dialog-panel-wide">
+      <header class="dialog-heading">
+        <img class="dialog-brand-icon" src="assets/spriteloop-logo.png" alt="" />
+        <div class="dialog-heading-copy">
+          <h2>Export SpriteLoop Package</h2>
+          <p class="dialog-subtitle">Choose where and what to export from the active document.</p>
         </div>
+      </header>
+
+      <div class="dialog-content">
+        <section class="form-section">
+          <sp-detail>DESTINATION</sp-detail>
+          <div class="destination-row">
+            <div id="dialog-export-folder" class="folder-display"></div>
+            <sp-button id="dialog-choose-folder" variant="secondary">Browse…</sp-button>
+          </div>
+          <p id="folder-help" class="field-help">Choose the folder that will contain the data file and images folder.</p>
+        </section>
+
+        <div class="section-divider"></div>
+
+        <section class="form-section">
+          <sp-detail>EXPORT CONTENT</sp-detail>
+          <div class="checkbox-stack">
+            <div class="checkbox-row">
+              <sp-checkbox id="dialog-export-groups">Export groups as images</sp-checkbox>
+            </div>
+            <div class="checkbox-row">
+              <sp-checkbox id="dialog-visible-only">Export visible layers only</sp-checkbox>
+            </div>
+          </div>
+        </section>
       </div>
-      <pre class="dialog-message">${escapeHtml(message)}</pre>
-      <footer>
-        <button class="dialog-button" autofocus type="submit">Close</button>
+
+      <footer class="dialog-footer">
+        <sp-button id="dialog-cancel" variant="secondary">Cancel</sp-button>
+        <sp-button id="dialog-export" class="dialog-action" variant="cta">Export</sp-button>
       </footer>
-    </form>
+    </div>
   `;
   document.body.appendChild(dialog);
 
-  await new Promise((resolve) => {
-    dialog.addEventListener("close", resolve, { once: true });
-    dialog.showModal();
+  let exportFolder = state.exportFolder;
+  let choosingFolder = false;
+  const folderDisplay = dialog.querySelector("#dialog-export-folder");
+  const chooseFolderButton = dialog.querySelector("#dialog-choose-folder");
+  const cancelButton = dialog.querySelector("#dialog-cancel");
+  const exportButton = dialog.querySelector("#dialog-export");
+  const exportGroups = dialog.querySelector("#dialog-export-groups");
+  const visibleOnly = dialog.querySelector("#dialog-visible-only");
+
+  exportGroups.checked = state.settings.exportGroupsAsImages !== false;
+  visibleOnly.checked = state.settings.visibleOnly !== false;
+
+  const syncFolder = () => {
+    if (exportFolder) {
+      const path = exportFolder.nativePath || exportFolder.name;
+      folderDisplay.textContent = path;
+      folderDisplay.title = path;
+      folderDisplay.classList.add("has-folder");
+    } else {
+      folderDisplay.textContent = "No folder selected";
+      folderDisplay.title = "";
+      folderDisplay.classList.remove("has-folder");
+    }
+    exportButton.disabled = !exportFolder;
+  };
+  syncFolder();
+
+  chooseFolderButton.addEventListener("click", async () => {
+    if (choosingFolder) {
+      return;
+    }
+
+    choosingFolder = true;
+    chooseFolderButton.disabled = true;
+    try {
+      const selectedFolder = await chooseExportFolder();
+      if (selectedFolder) {
+        exportFolder = selectedFolder;
+        syncFolder();
+      }
+    } finally {
+      choosingFolder = false;
+      chooseFolderButton.disabled = false;
+    }
   });
 
+  cancelButton.addEventListener("click", () => dialog.close("cancel"));
+  exportButton.addEventListener("click", () => {
+    if (exportFolder) {
+      dialog.close("export");
+    }
+  });
+
+  const returnValue = await waitForDialog(dialog);
+  const result = returnValue === "export" && exportFolder
+    ? {
+        exportFolder,
+        exportGroupsAsImages: exportGroups.checked,
+        visibleOnly: visibleOnly.checked
+      }
+    : null;
+
   dialog.remove();
+  return result;
+}
+
+async function showResultDialog({ title, message, detailLabel, detail, tone }) {
+  const dialog = document.createElement("dialog");
+  dialog.className = `dialog dialog-${tone}`;
+  dialog.innerHTML = `
+    <div class="dialog-panel">
+      <header class="dialog-heading">
+        <div class="dialog-icon" aria-hidden="true">${tone === "success" ? "&#10003;" : "!"}</div>
+        <div class="dialog-heading-copy">
+          <h2>${escapeHtml(title)}</h2>
+          <p class="dialog-subtitle">${tone === "success" ? "Package ready for SpriteLoop import" : "The package was not exported"}</p>
+        </div>
+      </header>
+      <div class="dialog-content">
+        <p class="dialog-message">${escapeHtml(message)}</p>
+        ${detail ? `
+          <section class="dialog-detail">
+            <div class="detail-label">${escapeHtml(detailLabel || "Details")}</div>
+            <div class="detail-value">${escapeHtml(detail)}</div>
+          </section>
+        ` : ""}
+      </div>
+      <footer class="dialog-footer">
+        <sp-button id="dialog-close" class="dialog-action" variant="cta">${tone === "success" ? "Done" : "Close"}</sp-button>
+      </footer>
+    </div>
+  `;
+  document.body.appendChild(dialog);
+  dialog.querySelector("#dialog-close").addEventListener("click", () => dialog.close("close"));
+  await waitForDialog(dialog);
+  dialog.remove();
+}
+
+function waitForDialog(dialog) {
+  return new Promise((resolve) => {
+    dialog.addEventListener("close", () => resolve(dialog.returnValue), { once: true });
+    dialog.showModal();
+  });
 }
 
 function escapeHtml(value) {
