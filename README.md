@@ -1,5 +1,7 @@
 # SpriteLoop Photoshop Exporter
 
+[![Photoshop exporter](https://img.shields.io/badge/Photoshop-Exporter-1473E6?style=for-the-badge&logo=adobephotoshop&logoColor=white)](https://www.adobe.com/products/photoshop.html)
+
 Photoshop UXP extension for exporting layered artwork as a SpriteLoop import package.
 
 The exporter creates:
@@ -55,3 +57,9 @@ The metadata file is named `spriteloop.import.json` and uses:
 - `canvas.width` and `canvas.height`
 - `parts[]` entries with `id`, `name`, `image`, `x`, `y`, `width`, `height`, `opacity`, `visible`, and optional `parentId`
 - optional `hierarchy[]` entries for groups
+
+## Related SpriteLoop Projects
+
+- [SpriteLoop App](https://github.com/Balkan-Ram-Games/spriteloop-app) - desktop animation editor
+- [Krita Exporter](https://github.com/Balkan-Ram-Games/spriteloop-krita-exporter) - Krita Python exporter
+- [Defold Extension](https://github.com/Balkan-Ram-Games/spriteloop-defold) - native `.spla` playback for Defold
