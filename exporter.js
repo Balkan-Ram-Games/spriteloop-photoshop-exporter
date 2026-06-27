@@ -22,8 +22,19 @@ function collectExportNodes(root, options = {}) {
 
   function walk(container, parentId) {
     const children = Array.isArray(container.children) ? container.children : [];
+    let clippingLayers = [];
 
     for (const child of children) {
+      if (child.isClippingMask === true) {
+        if (!normalizedOptions.visibleOnly || nodeVisible(child)) {
+          clippingLayers.push(child);
+        }
+        continue;
+      }
+
+      const attachedClippingLayers = clippingLayers;
+      clippingLayers = [];
+
       if (normalizedOptions.visibleOnly && !nodeVisible(child)) {
         continue;
       }
@@ -42,6 +53,7 @@ function collectExportNodes(root, options = {}) {
           bounds: child.bounds,
           opacity: nodeOpacity(child),
           visible: nodeVisible(child),
+          clippingLayers: attachedClippingLayers,
           children: child.children || []
         };
         nodes.push(group);
@@ -59,6 +71,7 @@ function collectExportNodes(root, options = {}) {
           bounds: child.bounds,
           opacity: nodeOpacity(child),
           visible: nodeVisible(child),
+          clippingLayers: attachedClippingLayers,
           children: []
         });
       }
@@ -254,4 +267,3 @@ module.exports = {
   uniqueFileName,
   uniqueId
 };
-

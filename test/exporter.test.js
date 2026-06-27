@@ -107,6 +107,42 @@ test("includes invisible nodes when visibleOnly is disabled", () => {
   assert.equal(nodes.some((node) => node.id === "hidden_arm"), true);
 });
 
+test("attaches clipping masks to their base instead of exporting them as parts", () => {
+  const clippedHighlight = layer("Highlight", 10, 10, 30, 30);
+  clippedHighlight.isClippingMask = true;
+  const base = layer("Body", 0, 0, 100, 100);
+  const nodes = collectExportNodes({
+    children: [clippedHighlight, base]
+  }, {
+    visibleOnly: true,
+    exportGroupsAsImages: false
+  });
+
+  assert.deepEqual(nodes.map((node) => node.id), ["body"]);
+  assert.deepEqual(nodes[0].clippingLayers.map((node) => node.name), ["Highlight"]);
+
+  const result = buildSpriteLoopPackage(documentInfo(), nodes, {
+    exportGroupsAsImages: false
+  });
+  assert.deepEqual(result.metadata.parts.map((part) => part.id), ["body"]);
+});
+
+test("does not attach clipping masks from a hidden base to the next layer", () => {
+  const clippedHighlight = layer("Highlight", 10, 10, 30, 30);
+  clippedHighlight.isClippingMask = true;
+  const hiddenBase = layer("Hidden Body", 0, 0, 100, 100, false);
+  const nextBase = layer("Background", 0, 0, 200, 200);
+  const nodes = collectExportNodes({
+    children: [clippedHighlight, hiddenBase, nextBase]
+  }, {
+    visibleOnly: true,
+    exportGroupsAsImages: false
+  });
+
+  assert.deepEqual(nodes.map((node) => node.id), ["background"]);
+  assert.deepEqual(nodes[0].clippingLayers, []);
+});
+
 test("skips zero-size nodes while building metadata", () => {
   const root = {
     children: [

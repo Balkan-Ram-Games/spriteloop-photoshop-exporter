@@ -47,14 +47,19 @@ async function exportActiveDocument(exportFolder, options, progressCallback) {
   });
 
   const imagesFolder = await getOrCreateFolder(exportFolder, "images");
+  const sourceDocumentId = documentIdFromDocument(document);
 
   await core.executeAsModal(async () => {
-    const total = spriteLoopPackage.parts.length;
-    for (let index = 0; index < spriteLoopPackage.parts.length; index += 1) {
-      const part = spriteLoopPackage.parts[index];
-      reportProgress(progressCallback, index + 1, total, part.node.name);
-      await exportNodePng(document, documentInfo, part.node, imagesFolder, part.fileName);
-      await pauseForPhotoshopEvents();
+    try {
+      const total = spriteLoopPackage.parts.length;
+      for (let index = 0; index < spriteLoopPackage.parts.length; index += 1) {
+        const part = spriteLoopPackage.parts[index];
+        reportProgress(progressCallback, index + 1, total, part.node.name);
+        await exportNodePng(sourceDocumentId, part.node, imagesFolder, part.fileName);
+        await pauseForPhotoshopEvents();
+      }
+    } finally {
+      await selectDocument(sourceDocumentId);
     }
   }, { commandName: "Export SpriteLoop Package" });
 
@@ -103,6 +108,7 @@ async function photoshopNodeFromLayer(layer) {
     name: layer.name || "",
     type: isGroup ? "group" : layer.kind || "layer",
     kind: isGroup ? "group" : layer.kind,
+    isClippingMask: layer.isClippingMask === true,
     visible: layer.visible !== false,
     opacity: typeof layer.opacity === "number" ? layer.opacity : 100,
     bounds: await boundsForLayer(layer),
@@ -137,15 +143,24 @@ async function boundsForLayer(layer) {
   return result && result[0] && result[0].bounds ? result[0].bounds : null;
 }
 
-async function exportNodePng(sourceDocument, documentInfo, node, imagesFolder, fileName) {
+async function exportNodePng(sourceDocumentId, node, imagesFolder, fileName) {
   const rect = normalizeBounds(node.bounds);
   if (!rect || rect.width <= 0 || rect.height <= 0) {
     return;
   }
 
-  await selectDocument(documentIdFromDocument(sourceDocument));
+  await selectDocument(sourceDocumentId);
   const originalDocumentId = await activeDocumentId();
+  if (originalDocumentId !== sourceDocumentId) {
+    throw new SpriteLoopExportError("Photoshop could not activate the source document.");
+  }
   const layerId = node.source.id;
+  const clippingLayerIds = (node.clippingLayers || [])
+    .map((layer) => layer.source && layer.source.id)
+    .filter((id) => id !== undefined && id !== null);
+  const clippingLayerSources = (node.clippingLayers || [])
+    .map((layer) => layer.source)
+    .filter(Boolean);
   let tempDocumentId = null;
 
   try {
@@ -159,6 +174,13 @@ async function exportNodePng(sourceDocument, documentInfo, node, imagesFolder, f
     tempDocumentId = await activeDocumentId();
     if (tempDocumentId === originalDocumentId) {
       throw new Error("Photoshop switched back to the source document during export.");
+    }
+    if (clippingLayerIds.length) {
+      const temporaryDocument = app.activeDocument;
+      await selectDocument(originalDocumentId);
+      await node.source.document.duplicateLayers(clippingLayerSources, temporaryDocument);
+      await selectDocument(tempDocumentId);
+      validateClippingLayersInTemporaryDocument(clippingLayerIds.length);
     }
 
     await trimTransparentPixels();
@@ -216,6 +238,19 @@ async function selectLayer(layerId, layerName) {
       _options: { dialogOptions: "dontDisplay" }
     }
   ], BATCH_OPTIONS);
+}
+
+function validateClippingLayersInTemporaryDocument(expectedClippingLayers) {
+  const temporaryDocument = app.activeDocument;
+  const layers = temporaryDocument && Array.isArray(temporaryDocument.layers)
+    ? temporaryDocument.layers
+    : [];
+  const clippingLayerCount = layers.filter((layer) => layer.isClippingMask === true).length;
+  if (layers.length < expectedClippingLayers + 1 || clippingLayerCount < expectedClippingLayers) {
+    throw new Error(
+      "Photoshop did not preserve the clipping-mask stack in the temporary document."
+    );
+  }
 }
 
 async function createDocumentFromSelectedLayer(name) {

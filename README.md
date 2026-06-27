@@ -30,6 +30,7 @@ The exporter panel is named **SpriteLoop**.
 4. In the export dialog, choose an export folder and export options:
    - **Export groups as images** exports each group as one part and does not export its children.
    - **Export visible layers only** skips hidden layers and hidden groups.
+   - Clipping-mask layers are baked into their base layer or group instead of being exported as separate parts.
 5. Click **Export**.
 
 The exported package has this layout:
