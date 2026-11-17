@@ -65,3 +65,4 @@ The metadata file is named `spriteloop.import.json` and uses:
 - [SpriteLoop App](https://github.com/Balkan-Ram-Games/spriteloop-app) - desktop animation editor
 - [Krita Exporter](https://github.com/Balkan-Ram-Games/spriteloop-krita-exporter) - Krita Python exporter
 - [Defold Extension](https://github.com/Balkan-Ram-Games/spriteloop-defold) - native `.spla` playback for Defold
+- [Godot Extension](https://github.com/Balkan-Ram-Games/spriteloop-godot) - native `.spla` playback for Godot 4.5+
